@@ -321,6 +321,12 @@ util.inherits(MediaConnection, EventEmitter);
 
 MediaConnection._idPrefix = 'mc_';
 
+MediaConnection.prototype.addTrack = function(remoteStream) {
+  util.log('(addTrack) Receiving stream', remoteStream);
+  this.remoteStream = remoteStream;
+  this.emit('stream', remoteStream);
+};
+
 MediaConnection.prototype.addStream = function(remoteStream) {
   util.log('Receiving stream', remoteStream);
 
@@ -410,7 +416,13 @@ Negotiator.startConnection = function(connection, options) {
 
   if (connection.type === 'media' && options._stream) {
     // Add the stream.
-    pc.addStream(options._stream);
+    if ('ontack' in pc) {
+      options._stream.getTracks().forEach(function(track) {
+        pc.addTrack(track, options._stream);
+      });
+    } else {
+      pc.addStream(options._stream);
+    }
   }
 
   // Set the connection's PC.
@@ -583,19 +595,33 @@ Negotiator._setupListeners = function(connection, pc, pc_id) {
 
   // MEDIACONNECTION.
   util.log('Listening for remote stream');
-  pc.onaddstream = function(evt) {
-    util.log('Received remote stream');
-    var stream = evt.stream;
-    var connection = provider.getConnection(peerId, connectionId);
-    // 10/10/2014: looks like in Chrome 38, onaddstream is triggered after
-    // setting the remote description. Our connection object in these cases
-    // is actually a DATA connection, so addStream fails.
-    // TODO: This is hopefully just a temporary fix. We should try to
-    // understand why this is happening.
-    if (connection.type === 'media') {
-      connection.addStream(stream);
-    }
-  };
+  
+  if ('ontrack' in pc) {
+    pc.ontrack = function(evt) {
+      util.log('Received remote stream');
+      var stream = evt.streams;
+      var connection = provider.getConnection(peerId, connectionId);
+      if (connection.type === 'media') {
+        stream.forEach(function(track) {
+          connection.addTrack(track, stream);
+        });
+      }
+    };
+  } else {
+    pc.onaddstream = function(evt) {
+      util.log('Received remote stream');
+      var stream = evt.stream;
+      var connection = provider.getConnection(peerId, connectionId);
+      // 10/10/2014: looks like in Chrome 38, onaddstream is triggered after
+      // setting the remote description. Our connection object in these cases
+      // is actually a DATA connection, so addStream fails.
+      // TODO: This is hopefully just a temporary fix. We should try to
+      // understand why this is happening.
+      if (connection.type === 'media') {
+        connection.addStream(stream);
+      }
+    };
+  }
 }
 
 Negotiator.cleanup = function(connection) {
@@ -1576,7 +1602,11 @@ var util = {
 
     // FIXME: not really the best check...
     if (audioVideo) {
-      audioVideo = !!pc.addStream;
+      if ('ontrack' in pc) {
+        audioVideo = !!pc.onTrack;
+      } else {
+        audioVideo = !!pc.addStream;
+      }
     }
 
     // FIXME: this is not great because in theory it doesn't work for
