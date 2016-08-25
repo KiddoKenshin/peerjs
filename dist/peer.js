@@ -1,4 +1,4 @@
-/*! peerjs build:0.3.14, development. Copyright(c) 2013 Michelle Bu <michelle@michellebu.com> */(function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
+/*! peerjs build:0.3.14.kks-custom, development. Copyright(c) 2013 Michelle Bu <michelle@michellebu.com> */(function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
 module.exports.RTCSessionDescription = window.RTCSessionDescription ||
 	window.mozRTCSessionDescription;
 module.exports.RTCPeerConnection = window.RTCPeerConnection ||
@@ -556,7 +556,10 @@ Negotiator._setupListeners = function(connection, pc, pc_id) {
   pc.onnegotiationneeded = function() {
     util.log('`negotiationneeded` triggered');
     if (pc.signalingState == 'stable') {
-      Negotiator._makeOffer(connection);
+      // The content of 'connection' is not ready on Firefox
+      setTimeout(function() {
+        Negotiator._makeOffer(connection);
+      }, 1000);
     } else {
       util.log('onnegotiationneeded triggered when not stable. Is another connection being established?');
     }
@@ -731,7 +734,8 @@ function Peer(id, options) {
     key: 'peerjs',
     path: '/',
     token: util.randomToken(),
-    config: util.defaultConfig
+    config: util.defaultConfig,
+    wsping: 0
   }, options);
   this.options = options;
   // Detect relative URL host.
@@ -755,6 +759,10 @@ function Peer(id, options) {
     util.setLogFunction(options.logFunction);
   }
   util.setLogLevel(options.debug);
+  
+  if (options.wsping !== 0) {
+    util.setWSPing(options.wsping);
+  }
   //
 
   // Sanity checks
@@ -1274,6 +1282,15 @@ Socket.prototype._startWebSocket = function(id) {
     }
     self._sendQueuedMessages();
     util.log('Socket open');
+    
+    // an Ping interval to Heroku so it doesn't disconnects idle connection.
+    if (util.wspingInterval !== 0) {
+      util.log('Socket ping enabled. Interval: ' + util.wspingInterval + 'ms');
+      var pingTimer = setInterval(function() {
+        self._socket.send('ping');
+        util.log('Socket ping');
+      }, 1000 * 50);
+    }
   };
 }
 
@@ -1431,6 +1448,10 @@ var util = {
   chunkedBrowsers: {'Chrome': 1},
   chunkedMTU: 16300, // The original 60000 bytes setting does not work when sending data from Firefox to Chrome, which is "cut off" after 16384 bytes and delivered individually.
 
+  wspingInterval: 0,
+  setWSPing: function(interval) {
+    util.wspingInterval = interval;
+  },
   // Logging logic
   logLevel: 0,
   setLogLevel: function(level) {
