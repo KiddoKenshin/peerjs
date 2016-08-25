@@ -557,8 +557,13 @@ Negotiator._setupListeners = function(connection, pc, pc_id) {
     util.log('`negotiationneeded` triggered');
     if (pc.signalingState == 'stable') {
       // The content of 'connection' is not ready on Firefox
-      setTimeout(function() {
-        Negotiator._makeOffer(connection);
+      var readyTimer = setInterval(function() {
+        if (connection.pc) {
+          clearInterval(readyTimer);
+          Negotiator._makeOffer(connection);
+        } else {
+          util.log('connection.pc is not available yet. Retrying...');
+        }
       }, 1000);
     } else {
       util.log('onnegotiationneeded triggered when not stable. Is another connection being established?');
